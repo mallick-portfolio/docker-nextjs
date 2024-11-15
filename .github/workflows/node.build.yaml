@@ -1,4 +1,4 @@
-name: Next js build
+name: Node.js CI
 
 on:
   push:
@@ -22,5 +22,5 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: "npm"
-      - run: docker login -u tamal008
-      - run: dckr_pat_ZvvpXOiyofYxRKpWdWvvm_buPZQ
+      - run: npm i
+      - run: npm run build --if-present
