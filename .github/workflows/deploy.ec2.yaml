@@ -101,6 +101,6 @@ jobs:
             # Ensure PM2 starts on system boot
             sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u $USER --hp $HOME
             
-            # Restart Nginx
-            sudo systemctl restart nginx
+            # Reload Nginx
+            sudo systemctl reload nginx
           '
