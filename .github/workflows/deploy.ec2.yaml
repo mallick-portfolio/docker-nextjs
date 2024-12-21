@@ -1,7 +1,9 @@
-name: Deploy Next.js App to EC2
+name: Deploy next.js app to ec2
 
 on:
   push:
+    branches: ["main"]
+  pull_request:
     branches: ["main"]
 
 jobs:
@@ -9,71 +11,67 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the repository code
       - name: Checkout
         uses: actions/checkout@v3
 
-      # Set up Node.js environment
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 20
+          node-version: 20.15
 
-      # Install dependencies and build the Next.js project
-      - name: Install dependencies and build
+      - name: Install dependencies
         run: |
           npm install
           npm run build
 
-      # Generate an SSH key pair
-      - name: Generate SSH key pair
-        id: generate_key
-        run: |
-          ssh-keygen -t rsa -b 4096 -f /tmp/deploy-key -q -N ""
-          echo "::set-output name=PRIVATE_KEY::$(cat /tmp/deploy-key)"
-          echo "::set-output name=PUBLIC_KEY::$(cat /tmp/deploy-key.pub)"
-
-      # Add the public key to the EC2 instance's authorized_keys
-      - name: Add public key to EC2
-        uses: appleboy/ssh-action@v0.1.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ steps.generate_key.outputs.PRIVATE_KEY }}
-          port: 22
-          script: |
-            echo "${{ steps.generate_key.outputs.PUBLIC_KEY }}" >> ~/.ssh/authorized_keys
-            chmod 600 ~/.ssh/authorized_keys
-
-      # Use the generated private key to deploy to EC2
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v0.1.3
+        env:
+          NODE_ENV: production
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: "${{ steps.generate_key.outputs.PRIVATE_KEY }}"
+          key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
+          script_stop: true
           script: |
-            # Stop the existing app process
-            pm2 stop nextjs || true
+            # Install PM2 if not present
+            if ! command -v pm2 &> /dev/null; then
+              npm install -g pm2
+            fi
 
-            # Create the app directory if it doesn't exist
+            # Create app directory
             mkdir -p /var/www/nextjs
 
-            # Remove any existing files in the app directory
+            # Clean existing files
             rm -rf /var/www/nextjs/*
 
-            # Copy the built project files to the EC2 instance
-            scp -r ./* /var/www/nextjs
+      - name: Sync files to EC2
+        uses: burnett01/rsync-deployments@5.2.1
+        with:
+          switches: -avzr --delete
+          remote_path: /var/www/nextjs
+          remote_host: ${{ secrets.EC2_HOST }}
+          remote_user: ${{ secrets.EC2_USER }}
+          remote_key: ${{ secrets.EC2_SSH_KEY }}
 
-            # Navigate to the app directory
+      - name: Start Application
+        uses: appleboy/ssh-action@v0.1.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
             cd /var/www/nextjs
-
-            # Install only production dependencies
             npm install --production
 
-            # Start the app using pm2
-            pm2 start npm --name "nextjs" -- start -p 3000
+            # Stop existing PM2 process if it exists
+            pm2 stop nextjs || true
+            pm2 delete nextjs || true
 
-            # Restart NGINX to reflect any changes
+            # Start with PM2
+            pm2 start npm --name "nextjs" -- start
+
+            # Restart Nginx
             sudo systemctl restart nginx
