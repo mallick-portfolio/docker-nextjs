@@ -14,20 +14,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Debug SSH Setup
-        run: |
-          echo "Setting up SSH key..."
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ls -la ~/.ssh/deploy_key
-          # Print first line of key to verify format (safely)
-          head -n 1 ~/.ssh/deploy_key
-          eval $(ssh-agent -s)
-          ssh-add ~/.ssh/deploy_key
-          # Test SSH connection
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -vvv ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'echo "SSH connection test"'
-
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
@@ -38,18 +24,23 @@ jobs:
           npm install
           npm run build
 
-      - name: Initial Setup
-        uses: appleboy/ssh-action@v0.1.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          script_stop: true
-          debug: true  # Added debug flag
-          script: |
-            whoami
-            pwd
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh/
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          cat >>~/.ssh/config <<END
+          Host ec2
+            HostName ${{ secrets.EC2_HOST }}
+            User ${{ secrets.EC2_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking no
+          END
+
+      - name: Deploy to EC2
+        run: |
+          # Initial setup
+          ssh ec2 '
             # Install PM2 if not present
             if ! command -v pm2 &> /dev/null; then
               npm install -g pm2
@@ -60,22 +51,14 @@ jobs:
             
             # Clean existing files
             rm -rf /var/www/nextjs/*
-
-      - name: Deploy Application Files
-        run: |
+          '
+          
+          # Copy files
           rsync -avz --delete \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
-            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/var/www/nextjs/
-
-      - name: Start Application
-        uses: appleboy/ssh-action@v0.1.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          debug: true  # Added debug flag
-          script: |
+            ./ ec2:/var/www/nextjs/
+          
+          # Start application
+          ssh ec2 '
             cd /var/www/nextjs
             npm install --production
             
@@ -88,3 +71,4 @@ jobs:
             
             # Restart Nginx
             sudo systemctl restart nginx
+          '
