@@ -37,22 +37,26 @@ jobs:
             StrictHostKeyChecking no
           END
 
+      - name: Setup EC2 Environment
+        run: |
+          ssh ec2 '
+            # Install Node.js if not present
+            if ! command -v node &> /dev/null; then
+              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+              sudo apt-get install -y nodejs
+            fi
+
+            # Install PM2 globally
+            sudo npm install -g pm2
+
+            # Create directory with correct permissions
+            sudo mkdir -p /var/www/nextjs
+            sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /var/www/nextjs
+            sudo chmod 755 /var/www/nextjs
+          '
+
       - name: Deploy to EC2
         run: |
-          # Initial setup
-          ssh ec2 '
-            # Install PM2 if not present
-            if ! command -v pm2 &> /dev/null; then
-              npm install -g pm2
-            fi
-            
-            # Create app directory
-            mkdir -p /var/www/nextjs
-            
-            # Clean existing files
-            rm -rf /var/www/nextjs/*
-          '
-          
           # Copy files
           rsync -avz --delete \
             ./ ec2:/var/www/nextjs/
