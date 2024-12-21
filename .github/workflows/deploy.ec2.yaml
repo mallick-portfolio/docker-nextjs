@@ -29,11 +29,11 @@ jobs:
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key: my-deploy-key
           port: 22
           script: |
             mkdir -p ~/.ssh
-            echo "${{ secrets.GITHUB_PUBLIC_KEY }}" >> ~/.ssh/authorized_keys
+            echo "$(cat my-deploy-key.pub)" >> ~/.ssh/authorized_keys
             chmod 600 ~/.ssh/authorized_keys
 
       - name: Install dependencies
