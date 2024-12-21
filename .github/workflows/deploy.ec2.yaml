@@ -19,6 +19,23 @@ jobs:
         with:
           node-version: 20.15
 
+      - name: Generate SSH Key Pair
+        run: |
+          ssh-keygen -t rsa -b 4096 -f my-deploy-key -N ""
+          cat my-deploy-key.pub
+
+      - name: Upload Public Key to EC2
+        uses: appleboy/ssh-action@v0.1.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            mkdir -p ~/.ssh
+            echo "${{ secrets.GITHUB_PUBLIC_KEY }}" >> ~/.ssh/authorized_keys
+            chmod 600 ~/.ssh/authorized_keys
+
       - name: Install dependencies
         run: |
           npm install
@@ -29,7 +46,7 @@ jobs:
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key: ./my-deploy-key
           port: 22
           script: |
             # Stop existing app
